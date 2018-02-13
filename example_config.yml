@@ -1,0 +1,36 @@
+
+discord_bot_token: 'tUrWBYGJHUMvjSDFXbSKg1FbyLd9pNTtmTwugqwFgIZ9qEcC7gc353cPqap'
+filters:
+# -----------------------------------------------------------------------------
+  - channel_title: null
+    title_re: null
+    thumbnail_re: '/(?P<imageID>[0-9]{1,4}).png'
+    url_re: '\?lat=(?P<lat>[+-.\d]*)&lon=(?P<lon>[+-.\d]*)&'
+    image_re: null
+    title: null
+    thumbnail: 'http://www.website.com/~username/directory/{imageID}.png'
+    image: 'https://maps.com?markers={lat:.5f},{lon:.5f}'
+    read_channel:
+        - '693254951841641566'
+    filter:
+        '100%':
+            - '386650614245566103'
+        '9[0-9]%':
+            - '121972437367624655'
+        'unown':
+            - '315874485930326242'
+    default:
+        - '184954206751651847'
+# -----------------------------------------------------------------------------
+  - read_channel:
+        - '504657686321701281'
+    filter:
+        '100%':
+            - '662956512039759274'
+        '9[0-9]%':
+            - '677869357115410870'
+        'unown':
+            - '337724252876034432'
+    default:
+        - '646122965549988852'
+# -----------------------------------------------------------------------------
