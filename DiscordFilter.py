@@ -66,38 +66,47 @@ class DiscordClient(discord.Client):
             if message.channel.id in filters['read_channel']:
                 counter = 0
                 # Loop through each of the channel filters
-                for find, channel in filters['filter'].items():
-                    counter += await self.proccess_message(message, find, channel, filter_settings=filters)
-
+                for find, channels in filters['filter'].items():
+                    counter += await self.proccess_message(message, find, channels, filter_settings=filters)
+                logging.info("Posted to {}".format(counter))
                 # if we didnt post to any other channel post to the default
                 if counter == 0:
-                    await self.proccess_message(message, find, channel=filters['default'], filter_settings=filters, default_post=True)
+                    await self.proccess_message(message, None, filters['default'], filter_settings=filters, default_post=True)
 
                 channel_count += 1
 
         if channel_count == 0:
             logging.info('Mesage not found in any read_channels {0.channel.server} - {0.channel}'.format(message))
+            if message.embeds:
+                if 'description' in message.embeds[0]:
+                    logging.info('Embed: {}'.format(message.embeds[0]['description']))
+            else:
+                logging.info('Content: {}'.format(message.content))
 
-    async def proccess_message(self, message, find, channel, filter_settings, default_post=False):
+    async def proccess_message(self, message, find, channels, filter_settings, default_post=False):
         # If we have at least one channel to post to lets contiune
-        if len(channel) > 0:
+        postCount = 0
+        if len(channels) > 0:
             # is this message a embeded message or a regular message
             if message.embeds:
                 for embedMsg in message.embeds:
-                    if 'description' in embedMsg and (find.search(embedMsg['description']) or default_post):
-                        for ch in channel:
+                    try:
+                        logging.info(embedMsg)
+                    except:
+                        pass
+                    if 'description' in embedMsg and (default_post or find.search(embedMsg['description'])):
+                        for ch in channels:
                             await self.send_embed_message(ch, embedMsg, filter_settings)
+                            postCount += 1
 
-            elif find.search(message.content) or default_post:
-                for ch in channel:
+            elif default_post or find.search(message.content):
+                for ch in channels:
                     #await self.send_embed_message(ch, dict(description=message.content, thumbnail=dict(url='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/20.png'), url='https://map.poketrack.xyz/?lat=-27.477498355998282&lon=153.02317410955516&name=Whiscash'), filter_settings)
                     await self.send_embed_message(ch, dict(description=message.content), filter_settings)
-            else:
-                return 0
-            return 1
+                    postCount += 1
         else:
             logging.info("No channels for Search {}".format(find))
-        return 0
+        return postCount
 
     async def send_embed_message(self, channel, embed_content, filter_settings):
         values = dict(description=embed_content['description'])
@@ -105,26 +114,29 @@ class DiscordClient(discord.Client):
         reConfig = {}
 
         # get all the values from the Regex
-        if 'title' in embed_content and embed_content['title']:
-            if 'title_re' in filter_settings and filter_settings['title_re']:
-                regexSearch = filter_settings['title_re'].search(embed_content['title'])
-                reConfig.update(regexSearch.groupdict())
-            values['title'] = embed_content['title']
+        def re_serch(items):
+            content = None
+            filterStr = '{}_re'.format(items[0])
 
-        if 'url' in embed_content and embed_content['url']:
-            if 'url_re' in filter_settings and filter_settings['url_re']:
-                regexSearch = filter_settings['url_re'].search(embed_content['url'])
-                reConfig.update(regexSearch.groupdict())
-            values['url'] = embed_content['url']
+            if items[0] in embed_content:
+                if len(items) > 1:
+                    if items[1] in embed_content[items[0]] and embed_content[items[0]][items[1]]:
+                        content = embed_content[items[0]][items[1]]
+                elif embed_content[items[0]]:
+                    content = embed_content[items[0]]
+                    values[items[0]] = embed_content[items[0]]
 
-        # get all the values from the Regex
-        if 'thumbnail' in embed_content and 'url' in embed_content['thumbnail'] and 'thumbnail_re' in filter_settings and filter_settings['thumbnail_re']:
-            regexSearch = filter_settings['thumbnail_re'].search(embed_content['thumbnail']['url'])
-            reConfig.update(regexSearch.groupdict())
-
-        if 'image' in embed_content and 'url' in embed_content['image'] and 'image' in filter_settings and filter_settings['image']:
-            regexSearch = filter_settings['image'].search(embed_content['image']['url'])
-            reConfig.update(regexSearch.groupdict())
+                if content and filterStr in filter_settings:
+                    regexSearch = filter_settings[filterStr].search(content)
+                    if regexSearch:
+                        return regexSearch.groupdict()
+            logging.info("Unable to match {} {}".format(filterStr, content))
+            return {}
+        
+        reConfig.update(re_serch(['title']))
+        reConfig.update(re_serch(['url']))
+        reConfig.update(re_serch(['thumbnail', 'url']))
+        reConfig.update(re_serch(['image','url']))
 
         # Convert values to a float or int as needed
         for key, value in reConfig.items():
@@ -133,29 +145,44 @@ class DiscordClient(discord.Client):
                 if reConfig[key] == int(reConfig[key]):
                     reConfig[key] = int(reConfig[key])
             except ValueError:
-                logging.debug("Not a float")
-        logging.info(reConfig)
+                logging.debug("Not a float: {}".format(reConfig[key]))
+        logging.info("re_values: {}".format(reConfig))
 
-        if 'title' in filter_settings and filter_settings['title']:
-            values['title'] = filter_settings['title'].format(**reConfig)
+        # Check to se if we can insert gathered values into the given format
+        def re_insert(item):
+            if item in filter_settings and filter_settings[item]:
+                try:
+                    values[item] = filter_settings[item].format(**reConfig)
+                except KeyError:
+                    logging.info("Unable to substitute {} :for: {}".format(filter_settings[item], item))
 
+        re_insert('title')
+        re_insert('url')        
+
+        logging.info("Vales: {}".format(values))
         # Start building up the embeded object with what we have so far
         embed = discord.Embed(**values)
 
-        # Set the thumbnail image if found
-        if 'thumbnail' in filter_settings and filter_settings['thumbnail']:
-            embed.set_thumbnail(url=filter_settings['thumbnail'].format(**reConfig))
-        elif 'thumbnail' in embed_content and 'url' in embed_content['thumbnail']:
-            embed.set_thumbnail(url=embed_content['thumbnail']['url'])
-
         # Set the image if found
-        if 'image' in filter_settings and filter_settings['image']:
-            embed.set_image(url=filter_settings['image'].format(**reConfig))
-        elif 'image' in embed_content and 'url' in embed_content['image']:
-            embed.set_image(url=embed_content['image']['url'])
+        def set_item(item, function):
+            try:
+                if item in filter_settings and filter_settings[item]:
+                    newItem = filter_settings[item].format(**reConfig)
+            except KeyError:
+                newItem = None
+
+            if newItem:
+                embed.set_image(url=newItem)
+            elif item in embed_content and 'url' in embed_content[item]:
+                embed.set_image(url=embed_content[item]['url'])
+
+        set_item('thumbnail', embed.set_thumbnail)
+        set_item('image', embed.set_image)
 
         logging.info('Posting to {channel.server} - {channel} - {description}'.format(channel=channel, description=logDes))
         await client.send_message(channel, embed=embed)
+
+logging.basicConfig(format='%(asctime)s - %(levelname)s:%(message)s', level=logging.INFO)
 
 # https://discordpy.readthedocs.io/en/rewrite/intro.html
 if __name__ == "__main__":
@@ -164,15 +191,17 @@ if __name__ == "__main__":
                     help='location of the config file')
     args = parser.parse_args()
 
-    logging.basicConfig(format='%(asctime)s - %(levelname)s:%(message)s', level=logging.INFO)
     with open(args.config, 'r') as f:
         settings = yaml.load(f)
 
     # Take all the regex and compile it before we go any futher
     for index, filters in enumerate(settings['filters']):
         for item in ['title_re', 'thumbnail_re', 'url_re', 'image_re']:
-            if item in filters and filters[item]:
-                settings['filters'][index][item] = re.compile(filters[item], re.M | re.I)
+            if item in filters:
+                if filters[item]:
+                    settings['filters'][index][item] = re.compile(filters[item], re.M | re.I)
+                else:
+                    del(settings['filters'][index][item])
 
         newFilters = {}
         for key, val in filters['filter'].items():
