@@ -172,9 +172,9 @@ class DiscordClient(discord.Client):
                 newItem = None
 
             if newItem:
-                embed.set_image(url=newItem)
+                function(url=newItem)
             elif item in embed_content and 'url' in embed_content[item]:
-                embed.set_image(url=embed_content[item]['url'])
+                function(url=embed_content[item]['url'])
 
         set_item('thumbnail', embed.set_thumbnail)
         set_item('image', embed.set_image)
