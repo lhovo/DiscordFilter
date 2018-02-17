@@ -3,9 +3,10 @@ import re
 import logging
 import yaml
 import argparse
+import pycurl
 
 # you need to install discord and yaml python packages 
-# pip3 install discord PyYAML
+# pip3 install discord PyYAML pycurl
 
 class DiscordClient(discord.Client):
     async def on_ready(self):
@@ -133,6 +134,25 @@ class DiscordClient(discord.Client):
             logging.info("Unable to match {} {}".format(filterStr, content))
             return {}
         
+        if filter_settings['url_follow'] and 'url' in embed_content and embed_content['url']:
+            try:
+                c = pycurl.Curl()
+                c.setopt(pycurl.URL, embed_content['url'])
+                c.setopt(pycurl.FOLLOWLOCATION, 1)
+                c.setopt(pycurl.HEADER, 1)
+                c.setopt(pycurl.NOBODY, 1) # header only, no body
+                c.setopt(pycurl.USERAGENT, "Mozilla/5.0 (Windows; U; Windows NT 5.1; de; rv:1.9.2.3) Gecko/20100401 Firefox/3.6.3")
+                c.setopt(pycurl.HTTPHEADER, [b'Content-Type: text/plain'])
+                c.setopt(pycurl.WRITEFUNCTION, lambda x: None)
+                c.perform()
+                # print(c.getinfo(pycurl.HTTP_CODE)
+                newUrl = c.getinfo(pycurl.EFFECTIVE_URL)
+                if newUrl:
+                    embed_content['url'] = newUrl
+                    logging.info("Using new Url {}".format(newUrl))
+            except pycurl.error as e:
+                logging.error(e.args[0])
+
         reConfig.update(re_serch(['title']))
         reConfig.update(re_serch(['url']))
         reConfig.update(re_serch(['thumbnail', 'url']))
