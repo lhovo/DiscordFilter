@@ -4,6 +4,7 @@ import logging
 import yaml
 import argparse
 import pycurl
+import requests
 
 # you need to install discord and yaml python packages 
 # pip3 install discord PyYAML pycurl
@@ -80,7 +81,7 @@ class DiscordClient(discord.Client):
             logging.info('Mesage not found in any read_channels {0.channel.server} - {0.channel}'.format(message))
             if message.embeds:
                 if 'description' in message.embeds[0]:
-                    logging.info('Embed: {}'.format(message.embeds[0]['description']))
+                    logging.info('Embed: {}'.format(message.embeds[0]['description'].split('\n')[0]))
             else:
                 logging.info('Content: {}'.format(message.content))
 
@@ -110,9 +111,9 @@ class DiscordClient(discord.Client):
         return postCount
 
     async def send_embed_message(self, channel, embed_content, filter_settings):
-        values = dict(description=embed_content['description'])
+        values = dict()
         logDes = embed_content['description'].split('\n')[0]
-        reConfig = {}
+        reConfig = {AddTime:AddTime()}
 
         # get all the values from the Regex
         def re_serch(items):
@@ -134,7 +135,7 @@ class DiscordClient(discord.Client):
             logging.info("Unable to match {} {}".format(filterStr, content))
             return {}
         
-        if filter_settings['url_follow'] and 'url' in embed_content and embed_content['url']:
+        if 'url_follow' in filter_settings and filter_settings['url_follow'] and 'url' in embed_content and embed_content['url']:
             try:
                 c = pycurl.Curl()
                 c.setopt(pycurl.URL, embed_content['url'])
@@ -151,12 +152,41 @@ class DiscordClient(discord.Client):
                     embed_content['url'] = newUrl
                     logging.info("Using new Url {}".format(newUrl))
             except pycurl.error as e:
-                logging.error(e.args[0])
+                logging.error("pycurl Error: {}".format(e.args[0]))
 
         reConfig.update(re_serch(['title']))
         reConfig.update(re_serch(['url']))
+        reConfig.update(re_serch(['description']))
         reConfig.update(re_serch(['thumbnail', 'url']))
         reConfig.update(re_serch(['image','url']))
+
+        lookup_content = None
+        if 'lookup_url' in filter_settings and 'lookup_type' in filter_settings and filter_settings['lookup_url']:
+            try:
+                response = requests.get(filter_settings['lookup_url'].format(**reConfig))
+                if filter_settings['lookup_type'] == 'json':
+                    lookup_content = response.json()
+
+                    # try goto key from config
+                    if 'lookup_keys' in filter_settings:
+                        for data in filter_settings['lookup_keys']:
+                            if data in lookup_content or isinstance(data, int):
+                                lookup_content = lookup_content[data]
+                                logging.debug("lookup_url: found key {}".format(data))
+                            else:
+                                logging.debug("lookup_url: unable to find {}".format(data))
+                                break
+            except (requests.exceptions.MissingSchema, requests.exceptions.ConnectionError) as e:
+                logging.error("lookup: {}".format(e))
+            except KeyError as e:
+                logging.error("Lookup: Unable to find key {}".format(e))
+
+        # parse the lookup data into the config
+        if lookup_content:
+            embed_content['lookup'] = lookup_content
+            reConfig.update(re_serch(['lookup']))
+        else:
+            logging.info("no Lookup info found")
 
         # Convert values to a float or int as needed
         for key, value in reConfig.items():
@@ -164,8 +194,8 @@ class DiscordClient(discord.Client):
                 reConfig[key] = float(reConfig[key])
                 if reConfig[key] == int(reConfig[key]):
                     reConfig[key] = int(reConfig[key])
-            except ValueError:
-                logging.debug("Not a float: {}".format(reConfig[key]))
+            except (ValueError, TypeError):
+                logging.debug("Not a Number: {}".format(reConfig[key]))
         logging.info("re_values: {}".format(reConfig))
 
         # Check to se if we can insert gathered values into the given format
@@ -177,9 +207,10 @@ class DiscordClient(discord.Client):
                     logging.info("Unable to substitute {} :for: {}".format(filter_settings[item], item))
 
         re_insert('title')
-        re_insert('url')        
+        re_insert('url')
+        re_insert('description')      
 
-        logging.info("Vales: {}".format(values))
+        logging.info("Values: {}".format(values))
         # Start building up the embeded object with what we have so far
         embed = discord.Embed(**values)
 
@@ -202,6 +233,18 @@ class DiscordClient(discord.Client):
         logging.info('Posting to {channel.server} - {channel} - {description}'.format(channel=channel, description=logDes))
         await client.send_message(channel, embed=embed)
 
+# Helper Function to add a time and Minues together
+class AddTime(object):
+    def __format__(self, add_time):
+        try:
+            values = add_time.split('?')
+            if len(values) == 2: 
+                input_time = datetime.strptime(values[0], "%H:%M") + timedelta(minutes=int(values[1]))
+                return datetime.strftime(input_time, "%H:%M")
+        except:
+            logger.error("Unable to add time togeather: {}".format(add_time))
+        return ""
+
 logging.basicConfig(format='%(asctime)s - %(levelname)s:%(message)s', level=logging.INFO)
 
 # https://discordpy.readthedocs.io/en/rewrite/intro.html
@@ -215,9 +258,10 @@ if __name__ == "__main__":
         settings = yaml.load(f)
 
     # Take all the regex and compile it before we go any futher
+    # This allows to pickup simple errors quickly
     for index, filters in enumerate(settings['filters']):
-        for item in ['title_re', 'thumbnail_re', 'url_re', 'image_re']:
-            if item in filters:
+        for item in [re for re in filters.keys() if re.endswith('_re')]:
+            if item.endswith('_re'):
                 if filters[item]:
                     settings['filters'][index][item] = re.compile(filters[item], re.M | re.I)
                 else:
