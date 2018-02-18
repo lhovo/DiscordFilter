@@ -5,6 +5,7 @@ import yaml
 import argparse
 import pycurl
 import requests
+from datetime import datetime, timedelta
 
 # you need to install discord and yaml python packages 
 # pip3 install discord PyYAML pycurl
@@ -96,7 +97,9 @@ class DiscordClient(discord.Client):
                         logging.info(embedMsg)
                     except:
                         pass
-                    if 'description' in embedMsg and (default_post or find.search(embedMsg['description'])):
+                    if default_post or \
+                        ('description' in embedMsg and find.search(embedMsg['description'])) or \
+                        ('title' in embedMsg and find.search(embedMsg['title'])):
                         for ch in channels:
                             await self.send_embed_message(ch, embedMsg, filter_settings)
                             postCount += 1
@@ -113,7 +116,7 @@ class DiscordClient(discord.Client):
     async def send_embed_message(self, channel, embed_content, filter_settings):
         values = dict()
         logDes = embed_content['description'].split('\n')[0]
-        reConfig = {AddTime:AddTime()}
+        reConfig = {'AddTime':AddTime()}
 
         # get all the values from the Regex
         def re_serch(items):
@@ -241,8 +244,8 @@ class AddTime(object):
             if len(values) == 2: 
                 input_time = datetime.strptime(values[0], "%H:%M") + timedelta(minutes=int(values[1]))
                 return datetime.strftime(input_time, "%H:%M")
-        except:
-            logger.error("Unable to add time togeather: {}".format(add_time))
+        except Exception as e:
+            logging.error("Unable to add time togeather: {}".format(add_time))
         return ""
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s:%(message)s', level=logging.INFO)
