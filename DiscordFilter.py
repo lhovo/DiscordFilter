@@ -219,7 +219,7 @@ class DiscordClient(discord.Client):
                     try:
                         newString += search.format(**reConfig)
                     except KeyError:
-                        logging.info("Unable to substitute {} :for: {}".format(filter_settings[item], item))
+                        logging.info("Unable to substitute {} :for: {}".format(search.strip(), item))
 
                 if newString != '':
                     values[item] = newString
