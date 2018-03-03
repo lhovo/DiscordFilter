@@ -5,10 +5,10 @@ import yaml
 import argparse
 import pycurl
 import requests
-from datetime import datetime, timedelta
+import os
 
 # you need to install discord and yaml python packages 
-# pip3 install discord PyYAML pycurl
+# pip3 install discord PyYAML pycurl requests
 
 class DiscordClient(discord.Client):
     async def on_ready(self):
@@ -70,11 +70,11 @@ class DiscordClient(discord.Client):
                 counter = 0
                 # Loop through each of the channel filters
                 for find, channels in filters['filter'].items():
-                    counter += await self.proccess_message(message, find, channels, filter_settings=filters)
+                    counter += await self.proccess_message(message, find, channels, filters)
                 logging.info("Posted to {}".format(counter))
                 # if we didnt post to any other channel post to the default
                 if counter == 0:
-                    await self.proccess_message(message, None, filters['default'], filter_settings=filters, default_post=True)
+                    await self.proccess_message(message, None, channels=filters['default'], filter_settings=filters, default_post=True)
 
                 channel_count += 1
 
@@ -100,23 +100,29 @@ class DiscordClient(discord.Client):
                     if default_post or \
                         ('description' in embedMsg and find.search(embedMsg['description'])) or \
                         ('title' in embedMsg and find.search(embedMsg['title'])):
-                        for ch in channels:
-                            await self.send_embed_message(ch, embedMsg, filter_settings)
+                        embed = self.create_embed_message(embedMsg, filter_settings)
+                        for channel in channels:
+                            await self.postMessage(channel, embed, embedMsg['description'])
                             postCount += 1
 
             elif default_post or find.search(message.content):
-                for ch in channels:
-                    #await self.send_embed_message(ch, dict(description=message.content, thumbnail=dict(url='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/20.png'), url='https://map.poketrack.xyz/?lat=-27.477498355998282&lon=153.02317410955516&name=Whiscash'), filter_settings)
-                    await self.send_embed_message(ch, dict(description=message.content), filter_settings)
+                embed = self.create_embed_message(dict(description=message.content), filter_settings)
+                for channel in channels:
+                    await self.postMessage(channel, embed, message.content)
                     postCount += 1
         else:
             logging.info("No channels for Search {}".format(find))
         return postCount
 
-    async def send_embed_message(self, channel, embed_content, filter_settings):
+    async def postMessage(self, channel, embed, log):
+        logDes = log.split('\n')[0]
+        logging.info('Posting to {channel.server} - {channel} - {description}'.format(channel=channel, description=logDes))
+        await client.send_message(channel, embed=embed)
+
+    def create_embed_message(self, embed_content, filter_settings):
         values = dict()
-        logDes = embed_content['description'].split('\n')[0]
-        reConfig = {'AddTime':AddTime()}
+        reConfig = dict()
+        reConfig.update(format_modules)
 
         # get all the values from the Regex
         def re_serch(items):
@@ -233,20 +239,7 @@ class DiscordClient(discord.Client):
         set_item('thumbnail', embed.set_thumbnail)
         set_item('image', embed.set_image)
 
-        logging.info('Posting to {channel.server} - {channel} - {description}'.format(channel=channel, description=logDes))
-        await client.send_message(channel, embed=embed)
-
-# Helper Function to add a time and Minues together
-class AddTime(object):
-    def __format__(self, add_time):
-        try:
-            values = add_time.split('?')
-            if len(values) == 2: 
-                input_time = datetime.strptime(values[0], "%H:%M") + timedelta(minutes=int(values[1]))
-                return datetime.strftime(input_time, "%H:%M")
-        except Exception as e:
-            logging.error("Unable to add time togeather: {}".format(add_time))
-        return ""
+        return embed
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s:%(message)s', level=logging.INFO)
 
@@ -256,6 +249,15 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', type=str, required=True,
                     help='location of the config file')
     args = parser.parse_args()
+
+    # import all the formaters
+    format_modules = {}
+    fileRE = re.compile('format_(?P<file>.*)\.py$', re.M | re.I)
+    for file in os.listdir('.'):
+        found = fileRE.search(file)
+        if found:
+            format_import = __import__(file[:-3])
+            exec("format_modules[found.groupdict()['file']] = format_import.{}()".format(found.groupdict()['file']))
 
     with open(args.config, 'r') as f:
         settings = yaml.load(f)
