@@ -128,6 +128,7 @@ class DiscordClient(discord.Client):
         def re_serch(items):
             content = None
             filterStr = '{}_re'.format(items[0])
+            searchItems = {}
 
             if items[0] in embed_content:
                 if len(items) > 1:
@@ -138,11 +139,13 @@ class DiscordClient(discord.Client):
                     values[items[0]] = embed_content[items[0]]
 
                 if content and filterStr in filter_settings:
-                    regexSearch = filter_settings[filterStr].search(content)
-                    if regexSearch:
-                        return regexSearch.groupdict()
-            logging.info("Unable to match {} {}".format(filterStr, content))
-            return {}
+                    for search in filter_settings[filterStr]:
+                        regexSearch = search.search(content)
+                        if regexSearch:
+                            searchItems.update(regexSearch.groupdict())
+            if searchItems == {} and content != None:
+                logging.info("Unable to match {} {}".format(filterStr, content))
+            return searchItems
         
         if 'url_follow' in filter_settings and filter_settings['url_follow'] and 'url' in embed_content and embed_content['url']:
             try:
@@ -155,7 +158,7 @@ class DiscordClient(discord.Client):
                 c.setopt(pycurl.HTTPHEADER, [b'Content-Type: text/plain'])
                 c.setopt(pycurl.WRITEFUNCTION, lambda x: None)
                 c.perform()
-                # print(c.getinfo(pycurl.HTTP_CODE)
+                logging.debug("Curl HTTP_CODE: {}".format(c.getinfo(pycurl.HTTP_CODE)))
                 newUrl = c.getinfo(pycurl.EFFECTIVE_URL)
                 if newUrl:
                     embed_content['url'] = newUrl
@@ -183,7 +186,7 @@ class DiscordClient(discord.Client):
         lookup_content = None
         if 'lookup_url' in filter_settings and 'lookup_type' in filter_settings and filter_settings['lookup_url']:
             try:
-                response = requests.get(filter_settings['lookup_url'].format(**reConfig))
+                response = requests.get(''.join(filter_settings['lookup_url']).format(**reConfig))
                 if filter_settings['lookup_type'] == 'json':
                     lookup_content = response.json()
 
@@ -208,13 +211,18 @@ class DiscordClient(discord.Client):
         else:
             logging.info("no Lookup info found")
 
-        # Check to se if we can insert gathered values into the given format
+        # Check to see if we can insert gathered values into the given format
         def re_insert(item):
             if item in filter_settings and filter_settings[item]:
-                try:
-                    values[item] = filter_settings[item].format(**reConfig)
-                except KeyError:
-                    logging.info("Unable to substitute {} :for: {}".format(filter_settings[item], item))
+                newString = ''
+                for search in filter_settings[item]:
+                    try:
+                        newString += search.format(**reConfig)
+                    except KeyError:
+                        logging.info("Unable to substitute {} :for: {}".format(filter_settings[item], item))
+
+                if newString != '':
+                    values[item] = newString
 
         re_insert('title')
         re_insert('url')
@@ -228,7 +236,7 @@ class DiscordClient(discord.Client):
         def set_item(item, function):
             try:
                 if item in filter_settings and filter_settings[item]:
-                    newItem = filter_settings[item].format(**reConfig)
+                    newItem = ''.join(filter_settings[item]).format(**reConfig)
             except KeyError:
                 newItem = None
 
@@ -273,7 +281,8 @@ if __name__ == "__main__":
         for item in [re for re in filters.keys() if re.endswith('_re')]:
             if item.endswith('_re'):
                 if filters[item]:
-                    settings['filters'][index][item] = re.compile(filters[item], re.M | re.I)
+                    for reIndex, reItem in enumerate(filters[item]):
+                        settings['filters'][index][item][reIndex] = re.compile(reItem, re.M | re.I)
                 else:
                     del(settings['filters'][index][item])
 

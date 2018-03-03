@@ -3,13 +3,41 @@ discord_bot_token: 'tUrWBYGJHUMvjSDFXbSKg1FbyLd9pNTtmTwugqwFgIZ9qEcC7gc353cPqap'
 filters:
 # -----------------------------------------------------------------------------
   - channel_title: null
-    title_re: null
-    thumbnail_re: '/(?P<imageID>[0-9]{1,4}).png'
-    url_re: '\?lat=(?P<lat>[+-.\d]*)&lon=(?P<lon>[+-.\d]*)&'
+    title:
+        - '{name} ({suburb})'
+    title_re:
+        - '(?P<name>[a-zA-z]*)'
+    thumbnail:
+        - 'http://www.website.com/~username/directory/{thumbID:03d}.png'
+    thumbnail_re:
+        - '/(?P<thumbID>[0-9]{1,4}).png'
+    url:
+        - 'http://maps.google.com/maps?q={lat:.5f},{lon:.5f}'
+    url_re:
+        - '\?lat=(?P<lat>[+-.\d]*)&lon=(?P<lon>[+-.\d]*)&'
+    url_follow: true
+    lookup_url:
+        - 'https://maps.googleapis.com/maps/api/geocode/json?'
+        - 'latlng={lat},{lon}&sensor=false'
+    lookup_type: 'json'
+    lookup_keys:
+        - 'results'
+        - 0
+        - 'formatted_address'
+    lookup_re:
+        - '(?P<street>[a-zA-Z ]*),(?P<suburb>[a-zA-Z ]*) \S* \d*[, ]+\S*$'
+    image:
+        - 'https://maps.googleapis.com/maps/api/staticmap?'
+        - 'maptype=roadmap&size=250x125&zoom=15&'
+        - 'markers=icon:http://www.website.com/~username/directory/{thumbID:03d}.png'
+        - '|{lat:.5f},{lon:.5f}&format=gif'
     image_re: null
-    title: null
-    thumbnail: 'http://www.website.com/~username/directory/{imageID}.png'
-    image: 'https://maps.com?markers={lat:.5f},{lon:.5f}'
+    description:
+        - "Location: {street}, {suburb}\n"
+        - "{remain} mins left ({AddTime:{time}?{remain}})"
+    description_re:
+        - '(?P<remain>\d{0,3}) min left'
+        - 'spotted at: (?P<time>[\d:]{1,5})'
     read_channel:
         - '693254951841641566'
     filter:
