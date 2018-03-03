@@ -259,6 +259,8 @@ if __name__ == "__main__":
             format_import = __import__(file[:-3])
             exec("format_modules[found.groupdict()['file']] = format_import.{}()".format(found.groupdict()['file']))
 
+    logging.info('Imported Modules: {}'.format(', '.join(format_modules.keys())))
+
     with open(args.config, 'r') as f:
         settings = yaml.load(f)
 
