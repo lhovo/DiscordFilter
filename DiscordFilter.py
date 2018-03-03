@@ -53,6 +53,10 @@ class DiscordClient(discord.Client):
         logging.info("Starting...")
         logging.info('------')
 
+        if args.last:
+            async for message in client.logs_from(client.get_channel(read_channel), limit=2):
+                await self.on_message(message)
+
     async def on_message(self, message):
         logging.debug("Author ID: {}, User ID:{}".format(message.author.id, self.user.id))
         # dont post if we get a message we sent to a channel
@@ -69,12 +73,22 @@ class DiscordClient(discord.Client):
             if message.channel.id in filters['read_channel']:
                 counter = 0
                 # Loop through each of the channel filters
+                embed = self.proccess_message(message, filters)
                 for find, channels in filters['filter'].items():
-                    counter += await self.proccess_message(message, find, channels, filters)
+                    if len(channels) > 0:
+                        embedMsg = message.embeds[0]
+                        for channel in channels:
+                            if ('description' in embedMsg and find.search(embedMsg['description'])) or \
+                               ('title' in embedMsg and find.search(embedMsg['title'])):
+                                await self.postMessage(channel, embed)
+                                counter += 1
+                    else:
+                        logging.info("No channels for Search {}".format(find))
                 logging.info("Posted to {}".format(counter))
                 # if we didnt post to any other channel post to the default
                 if counter == 0:
-                    await self.proccess_message(message, None, channels=filters['default'], filter_settings=filters, default_post=True)
+                    for channel in filters['default']:
+                        await self.postMessage(channel, embed)
 
                 channel_count += 1
 
@@ -86,43 +100,29 @@ class DiscordClient(discord.Client):
             else:
                 logging.info('Content: {}'.format(message.content))
 
-    async def proccess_message(self, message, find, channels, filter_settings, default_post=False):
-        # If we have at least one channel to post to lets contiune
-        postCount = 0
-        if len(channels) > 0:
-            # is this message a embeded message or a regular message
-            if message.embeds:
-                for embedMsg in message.embeds:
-                    try:
-                        logging.info(embedMsg)
-                    except:
-                        pass
-                    if default_post or \
-                        ('description' in embedMsg and find.search(embedMsg['description'])) or \
-                        ('title' in embedMsg and find.search(embedMsg['title'])):
-                        embed = self.create_embed_message(embedMsg, filter_settings)
-                        for channel in channels:
-                            await self.postMessage(channel, embed, embedMsg['description'])
-                            postCount += 1
+        logging.info('-------------------------------------------------')
 
-            elif default_post or find.search(message.content):
-                embed = self.create_embed_message(dict(description=message.content), filter_settings)
-                for channel in channels:
-                    await self.postMessage(channel, embed, message.content)
-                    postCount += 1
+    def proccess_message(self, message, filter_settings):
+        # is this message a embeded message or a regular message
+        if message.embeds:
+            embedMsg = message.embeds[0]
+            try:
+                logging.info("EmbedMsg: {}".format(embedMsg))
+            except:
+                pass
+            embed = self.create_embed_message(embedMsg, filter_settings)
+
         else:
-            logging.info("No channels for Search {}".format(find))
-        return postCount
+            embed = self.create_embed_message(dict(description=message.content), filter_settings)
+        return embed
 
-    async def postMessage(self, channel, embed, log):
-        logDes = log.split('\n')[0]
-        logging.info('Posting to {channel.server} - {channel} - {description}'.format(channel=channel, description=logDes))
+    async def postMessage(self, channel, embed):
+        logging.info('Posting to {channel.server} - {channel}'.format(channel=channel))
         await client.send_message(channel, embed=embed)
 
     def create_embed_message(self, embed_content, filter_settings):
         values = dict()
         reConfig = dict()
-        reConfig.update(format_modules)
 
         # get all the values from the Regex
         def re_serch(items):
@@ -169,6 +169,17 @@ class DiscordClient(discord.Client):
         reConfig.update(re_serch(['thumbnail', 'url']))
         reConfig.update(re_serch(['image','url']))
 
+        # Convert values to a float or int as needed
+        for key, value in reConfig.items():
+            try:
+                reConfig[key] = float(reConfig[key])
+                if reConfig[key] == int(reConfig[key]):
+                    reConfig[key] = int(reConfig[key])
+            except (ValueError, TypeError):
+                logging.debug("Not a Number: {}".format(reConfig[key]))
+        reConfig.update(format_modules)
+        logging.info("re_values: {}".format(reConfig))
+        
         lookup_content = None
         if 'lookup_url' in filter_settings and 'lookup_type' in filter_settings and filter_settings['lookup_url']:
             try:
@@ -196,16 +207,6 @@ class DiscordClient(discord.Client):
             reConfig.update(re_serch(['lookup']))
         else:
             logging.info("no Lookup info found")
-
-        # Convert values to a float or int as needed
-        for key, value in reConfig.items():
-            try:
-                reConfig[key] = float(reConfig[key])
-                if reConfig[key] == int(reConfig[key]):
-                    reConfig[key] = int(reConfig[key])
-            except (ValueError, TypeError):
-                logging.debug("Not a Number: {}".format(reConfig[key]))
-        logging.info("re_values: {}".format(reConfig))
 
         # Check to se if we can insert gathered values into the given format
         def re_insert(item):
@@ -248,6 +249,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Discord Fiter')
     parser.add_argument('-c', '--config', type=str, required=True,
                     help='location of the config file')
+    parser.add_argument('-l', '--last', default=False, action="store_true",
+                    help='grab the last message and proccess it, useful for debugging')
     args = parser.parse_args()
 
     # import all the formaters
